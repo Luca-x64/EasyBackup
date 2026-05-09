@@ -8,6 +8,7 @@ L'eseguibile è situato sul disco esterno di backup e mi permette rapidamente di
 </p>
 
 ROADMAP:
+- parametrizzare device names in config
 - estendere il supporto per Android
 - Compressione
 - Cifratura
