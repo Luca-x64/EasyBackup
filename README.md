@@ -228,12 +228,15 @@ DEST_BASE="/mnt"
 ---
 
 <details>
+<summary><strong>Esempio di esecuzione</strong></summary>
 
-## Esempio di esecuzione
 ![alt text](<Screenshot From 2026-05-10 20-30-33.png>)
 ![alt text](<Screenshot From 2026-05-10 20-29-23.png>)
 ![alt text](<Screenshot From 2026-05-10 20-28-51.png>)
 
+
+</details>
+<details>
 <summary><strong>Troubleshooting</strong></summary>
 
 ### Nessun file copiato  
