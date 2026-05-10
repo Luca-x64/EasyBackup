@@ -1,0 +1,19 @@
+# Select file and directory to backup
+# relative path from your linux home
+
+# Cartelle - [nome]/
+Documents/
+Desktop/
+Scrivania/
+Immagini/
+Pictures/
+Videos/
+.local/share/gnome-shell/extensions/
+.config/fish
+
+# File
+.ssh
+.bashrc
+.bash_profile
+.bash_aliases
+.gitconfig

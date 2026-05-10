@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
 if [[ "$EUID" -eq 0 ]]; then
   echo "NON eseguire questo script con sudo"
   exit 1
 fi
 
 DRY_RUN_FLAG=()
-CONFIG_DIR="./config"
-INCLUDE_FILE="$CONFIG_DIR/include.txt"
+
+
+# shellcheck disable=SC1090
 
 # colori
 BOLD=$(tput bold)
@@ -38,7 +47,12 @@ confirm_or_exit() {
 
 print_summary() {
   echo "=== INCLUDE ==="
-  cat "$INCLUDE_FILE"
+  if [[ -f "$INCLUDE_FILE" ]]; then
+    cat "$INCLUDE_FILE"
+  else
+    echo "ERRORE: include file non trovato ($INCLUDE_FILE)"
+    exit 1
+  fi
   echo
 }
 
@@ -48,12 +62,13 @@ print_summary() {
 backup_pc() {
   NAME="$1"
   DEST="$2"
-  SRC="$HOME"
+  SRC="$3"
+
 
   DATE=$(date +%F)
   NEW="$DEST/$DATE"
 
-  DEST_ABS=$(realpath "$DEST")
+  DEST_ABS=$(realpath "$DEST" 2>/dev/null || echo "$DEST")
   LAST=$(ls -1d "$DEST_ABS"/20* 2>/dev/null | sort | tail -n 1 || true)
 
   echo "Dispositivo: $NAME"
@@ -84,15 +99,20 @@ backup_pc() {
 
   mkdir -p "$NEW"
 
-  if ! mountpoint -q "$(realpath "$DEST")/.."; then
-    echo "${RED}ERRORE: $DEST non è montato${RESET}"
-    exit 1
+if [[ "${REQUIRE_MOUNT:-1}" -eq 1 ]]; then
+  if [[ "$DEST" = /* ]]; then
+    if ! mountpoint -q "$(dirname "$DEST")"; then
+      echo "${RED}ERRORE: destinazione non montata${RESET}"
+      exit 1
+    fi
+  else
+    echo "WARN: DEST relativo, skip controllo mount"
   fi
-
+fi
 echo
 echo "=== ESECUZIONE RSYNC ==="
 
-while read -r line; do
+while IFS= read -r line || [[ -n "$line" ]]; do
   [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
   src_path="$SRC/$line"
@@ -143,7 +163,6 @@ done < "$INCLUDE_FILE"
     echo "Pulizia dry run: rimozione $NEW"
     rm -rf "$NEW"
   fi
-fi
 }
 
 # =========================
@@ -194,7 +213,7 @@ print_banner
 echo "=== Modalità ==="
 echo "1) Dry run (simulazione)"
 echo "2) Backup reale"
-read -rp "Scelta: " MODE
+read -rp "Scelta: " MODE || exit 1
 
 case "$MODE" in
   1)
@@ -213,14 +232,47 @@ esac
 
 echo
 echo "=== Seleziona dispositivo ==="
-echo "1) Fisso Arch"
-echo "2) Laptop"
-echo "3) Telefono"
+CONFIG_BASE_DIR="$SCRIPT_DIR/config/prod"
+
+mapfile -t DEVICES < <(find "$CONFIG_BASE_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
+
+if [[ ${#DEVICES[@]} -eq 0 ]]; then
+  echo "Nessun dispositivo trovato in $CONFIG_BASE_DIR"
+  exit 1
+fi
+
+for i in "${!DEVICES[@]}"; do
+  name=$(basename "${DEVICES[$i]}")
+  echo "$((i+1))) $name"
+done
+
 read -rp "Scelta: " CHOICE
 
-case "$CHOICE" in
-  1) backup_pc "Fisso Arch" "./Fisso Arch" ;;
-  2) backup_pc "Laptop" "./Laptop" ;;
-  3) backup_phone ;;
-  *) echo "Scelta non valida"; exit 1 ;;
-esac
+INDEX=$((CHOICE-1))
+
+if [[ -z "${DEVICES[$INDEX]:-}" ]]; then
+  echo "Scelta non valida"
+  exit 1
+fi
+
+DEVICE_DIR="${DEVICES[$INDEX]}"
+CONFIG_FILE="$DEVICE_DIR/env.conf"
+INCLUDE_FILE="$DEVICE_DIR/include.txt"
+if [[ ! -f "$INCLUDE_FILE" ]]; then
+  echo "Include mancante: $INCLUDE_FILE"
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
+DEST_BASE="/mnt"
+
+if [[ "$DEST" != /* ]]; then
+  DEST_BASE="${DEST_BASE:-/mnt}"
+fi
+INCLUDE_FILE="$DEVICE_DIR/include.txt"
+echo "CONFIG: NAME=$NAME DEST=$DEST SRC=$SRC"
+: "${NAME:?NAME non definito in env.conf}"
+: "${DEST:?DEST non definito in env.conf}"
+: "${SRC:?SRC non definito in env.conf}"
+backup_pc "$NAME" "$DEST" "$SRC"

@@ -2,25 +2,16 @@
 
 Script Bash per backup incrementali tramite `rsync`, con supporto a snapshot manuali e hardlink (simile a Time Machine, ma controllato manualmente).
 <p>
-Lo script lo ho realizzato per automatizzare il processo di backup dei miei dispositivi (pc linux e smartphone).
+Lo script è stato realizzato per automatizzare il processo di backup di più dispositivi (PC Linux e, in futuro, smartphone).
 
-L'eseguibile è situato sul disco esterno di backup e mi permette rapidamente di eseguire un salvataggio dei file importanti.
+
+L'eseguibile è situato sul disco esterno e consente di eseguire rapidamente il salvataggio dei file importanti.
 </p>
-
-ROADMAP:
-- parametrizzare device names in config
-- estendere il supporto per Android
-- Compressione
-- Cifratura
-- dedup file con hash
-- scheduling automatico backup
-- backup su drive
----
 
 ## Caratteristiche
 
 - Backup selettivo basato su lista (`include.txt`)
-- Snapshot manuali (creati quando esegui lo script)
+- Snapshot manuali (creati ad ogni esecuzione)
 - Hardlink tra snapshot → risparmio spazio
 - Modalità:
   - Dry-run (simulazione)
@@ -48,90 +39,102 @@ ROADMAP:
 .
 ├── backup.sh
 ├── config/
-│   ├── include.txt
-│   └── include_phone.txt
+│ └── prod/
+│ ├── <Device1>/
+│ │ ├── env.conf
+│ │ └── include.txt
+│ ├── <Device2>/
+│ │ ├── env.conf
+│ │ └── include.txt
+│ └── .../
 ```
 
 ---
 
 ## Configurazione
-`/mnt` disco di backup
+Il disco di backup è montato tipicamente in: ```/mnt```.
 
 <details>
-<summary><strong>VERIFICARE CHE IL DISCO SIA MONTATO SENZA I PERMESSI DI ROOT</strong></summary>
+<summary><strong>Verifica mount disco</strong></summary>
 
-Il disco di destinazione `/mnt` **non deve essere montato come root puro**, altrimenti:
+Il disco `/mnt` non deve essere montato come root puro.
 
-- i file verranno creati con owner `root`
-- potresti perdere accesso in lettura/scrittura
-- gli hardlink possono comportarsi in modo incoerente
+Problemi se montato male:
+- file creati con owner `root`
+- perdita accesso lettura/scrittura
+- comportamento errato degli hardlink
 
-Verifica mount: `bash mount | grep /mnt`
-se user_id=0,group_id=0 => mount effettuato come root → configurazione non corretta
+Verifica:
 
-modifica `/etc/fstab`
+```bash
+mount | grep /mnt
+```
+
+Se vedi `uid=0` o `gid=0`, correggi `/etc/fstab`:
+
 ```bash
 UUID=XXXX-XXXX /mnt ntfs3 uid=1000,gid=1000,umask=022,nofail 0 0
 ```
 (ntf3 se disco in NTFS)
 </details>
 
-<details>
-<summary><strong>PC Linux</strong></summary>
+---
 
-Modifica `config/include.txt` aggiungendo le cartelle e i file che vuoi salvare.
+## Configurazione dispositivi
 
-Esempio:
+Ogni dispositivo ha una propria configurazione:
 
+```
+config/prod/<device>/
+```
+
+Contenuto:
+
+- `env.conf` → parametri del dispositivo  
+- `include.txt` → file/cartelle da salvare  
+
+---
+
+### Esempio `env.conf`
+
+```bash
+NAME="Device1"  
+SRC="$HOME"
+DEST="Device1Folder"   
+DEST_BASE="/mnt"
+REQUIRE_MOUNT=1
+```
+
+---
+
+### Significato parametri
+
+- `SRC` → sorgente dati  
+- `DEST` →  Nome della cartella del dispositivo in `/mnt/Device1/`  
+- `DEST_BASE` → percorso reale (es: `/mnt`)  
+- `REQUIRE_MOUNT` → verifica che il disco sia montato  
+
+---
+
+### Esempio `include.txt`
 ```
 Documents/
 Desktop/
 .bashrc
+.config/
 ```
 
+---
 
-### Regole
+
+### Regole include
 
 - una entry per riga  
 - `/` finale → directory ricorsiva  
 - file singoli supportati  
 - `#` → commenti  
 
-<details>
-<summary><strong>VERIFICARE CHE IL DISCO SIA MONTATO SENZA I PERMESSI DI ROOT</strong></summary>
-
-Il disco di destinazione `/mnt` **non deve essere montato come root puro**, altrimenti:
-
-- i file verranno creati con owner `root`
-- potresti perdere accesso in lettura/scrittura
-- gli hardlink possono comportarsi in modo incoerente
-
-Verifica mount: `bash mount | grep /mnt`
-se user_id=0,group_id=0 => mount effettuato come root → configurazione non corretta
-
-modifica `/etc/fstab`
-`UUID=XXXX-XXXX /mnt ntfs3 uid=1000,gid=1000,umask=022,nofail 0 0`
-
-(ntf3 se disco in NTFS)
-</details>
-
-</details>
-<details>
-<summary><strong>Telefono (WIP)</strong></summary>
-
-Configura:
-
-```
-config/include_phone.txt
-```
-
-E imposta la sorgente:
-
-```bash
-PHONE_SRC=/path/telefono ./backup.sh
-```
-
-</details>
+---
 
 ## Utilizzo
 
@@ -147,8 +150,7 @@ PHONE_SRC=/path/telefono ./backup.sh
 ### Comportamento
 
 - crea uno snapshot con data corrente  
-- riutilizza dati precedenti tramite hardlink  
-- copia solo file modificati  
+- copia realmente solo i file modificati  
 
 ---
 
@@ -157,21 +159,25 @@ PHONE_SRC=/path/telefono ./backup.sh
 Gli snapshot vengono salvati in:
 
 ```
-/mnt/<Device>/<YYYY-MM-DD>/
+DEST_BASE/DEST/YYYY-MM-DD/
 ```
 
-Esempio:
+### Esempio
+
+Configurazione:
+
+```bash
+DEST="Laptop"
+DEST_BASE="/mnt"
+```
 
 ```
 /mnt/Laptop/2026-05-10/
 ```
 
-
-<p>`Device` è il nome della cartella del disco di backup che conterrà i backup di un determinato dispositivo (da creare manualmente)</p>
-
 ---
 <details>
-<summary><strong>Come funziona</strong></summary>
+<summary><strong>Logica snapshot</strong></summary>
 
 - Primo backup → copia completa  
 - Backup successivi:
@@ -205,7 +211,8 @@ Esempio:
 
 ## Limitazioni
 
-- mount non gestito automaticamente  
+- mount non gestito automaticamente
+- configurazione manuale dispositivi  
 - nessuna pianificazione integrata
 - Disco non deve essere montato con i permessi di root (uid e gid != 0)
 
@@ -216,10 +223,17 @@ Esempio:
 - eseguire sempre un dry-run prima  
 - mantenere `include.txt` minimale  
 - evitare directory inutili (`.cache`, `.npm`, ecc.)  
+- Non usare percorsi assoluti in `DEST`
 
 ---
 
 <details>
+
+## Esempio di esecuzione
+![alt text](<Screenshot From 2026-05-10 20-30-33.png>)
+![alt text](<Screenshot From 2026-05-10 20-29-23.png>)
+![alt text](<Screenshot From 2026-05-10 20-28-51.png>)
+
 <summary><strong>Troubleshooting</strong></summary>
 
 ### Nessun file copiato  
@@ -232,3 +246,14 @@ Esempio:
 → file non accessibili senza sudo
 
 </details>
+
+---
+
+ROADMAP:
+- supporto Android
+- compressione
+- cifratura
+- deduplicazione con hash
+- scheduling automatico
+- backup remoto (drive/NAS)
+---
