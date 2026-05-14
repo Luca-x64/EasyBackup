@@ -165,42 +165,95 @@ done < "$INCLUDE_FILE"
   fi
 }
 
-# =========================
-# TELEFONO (WIP)
-# =========================
-backup_phone() {
-  echo "=== BACKUP TELEFONO (WIP) ==="
-  confirm_or_exit "Procedere comunque?"
-  echo "Non implementato"
+build_rdfind_excludes() {
+  local file="$1"
+  RDFIND_EXCLUDES=()
+
+  [[ ! -f "$file" ]] && return
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    RDFIND_EXCLUDES+=( -excludedir "$line" )
+
+  done < "$file"
 }
 
-check_includes_fs() {
-  local SRC="$1"
-  local total=0
-  local ok=0
+dedup_run() {
+  local DEST="$1"
+  local MODE="$2"
 
-  echo "=== ANALISI CONFIG (filesystem) ==="
+  local BASE="$DEST_BASE/$DEST"
 
-  while read -r line; do
-    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-    total=$((total + 1))
+  if [[ "$DEDUP_MODE" != "1" && "$DEDUP_MODE" != "2" ]]; then
+    echo "Scelta non valida"
+    exit 1
+  fi
 
-  clean_line="${line%/}"
+  if [[ ! -d "$BASE" ]]; then
+    echo "ERRORE: destinazione non trovata ($BASE)"
+    exit 1
+  fi
 
-  if [ -e "$SRC/$clean_line" ]; then
-      ok=$((ok + 1))
-    else
-      echo "${RED}MISSING:${RESET} $line"
-    fi
-  done < "$INCLUDE_FILE"
+    command -v rdfind >/dev/null 2>&1 || {
+    echo "ERRORE: rdfind non installato"
+    exit 1
+  }
+
+  build_rdfind_excludes "$EXCLUDE_FILE"
+
+  # trova snapshot
+  mapfile -t SNAPSHOTS < <(find "$BASE" -mindepth 1 -maxdepth 1 -type d -name "20*" | sort)
+
+  if [[ ${#SNAPSHOTS[@]} -eq 0 ]]; then
+    echo "Nessuno snapshot trovato in $BASE"
+    exit 1
+  fi
+
+  local LAST="${SNAPSHOTS[-1]}"
+  local PREV=""
+
+  if [[ ${#SNAPSHOTS[@]} -ge 2 ]]; then
+    PREV="${SNAPSHOTS[-2]}"
+  fi
 
   echo
-  echo "Include validi: $ok/$total"
+  echo "=== DEDUP INFO ==="
+  echo "Base: $BASE"
+  echo "Ultimo snapshot: $LAST"
+  [[ -n "$PREV" ]] && echo "Precedente: $PREV"
 
-if [[ "$ok" -ne "$total" ]]; then
-  echo "${BOLD}${RED}ATTENZIONE: path mancanti${RESET}"
-  return 0
-fi
+  case "$MODE" in
+    1)
+      # NEW + LAST
+      if [[ -z "$PREV" ]]; then
+        echo "Snapshot insufficienti per dedup parziale"
+        exit 1
+      fi
+
+      confirm_or_exit "Eseguire dedup tra ultimo e precedente?"
+
+      echo "Avvio rdfind (parziale)..."
+      rdfind -makehardlinks true "${RDFIND_EXCLUDES[@]}" "$LAST" "$PREV"
+      ;;
+
+    2)
+      # FULL
+      echo "ATTENZIONE: deduplicazione completa (molto lenta)"
+      confirm_or_exit "Continuare?"
+
+      echo "Avvio rdfind (completo)..."
+      rdfind -makehardlinks true "${RDFIND_EXCLUDES[@]}" "$BASE"
+      ;;
+
+    *)
+      echo "Modalità non valida"
+      exit 1
+      ;;
+  esac
+
+  echo
+  echo "Deduplicazione completata"
 }
 
 # =========================
@@ -208,27 +261,6 @@ fi
 # =========================
 
 print_banner
-
-# === Modalità ===
-echo "=== Modalità ==="
-echo "1) Dry run (simulazione)"
-echo "2) Backup reale"
-read -rp "Scelta: " MODE || exit 1
-
-case "$MODE" in
-  1)
-    DRY_RUN_FLAG=(--dry-run)
-    echo "[DRY RUN ATTIVO]"
-    ;;
-  2)
-    DRY_RUN_FLAG=()
-    echo "[MODALITÀ REALE]"
-    ;;
-  *)
-    echo "Scelta non valida"
-    exit 1
-    ;;
-esac
 
 echo
 echo "=== Seleziona dispositivo ==="
@@ -247,7 +279,6 @@ for i in "${!DEVICES[@]}"; do
 done
 
 read -rp "Scelta: " CHOICE
-
 INDEX=$((CHOICE-1))
 
 if [[ -z "${DEVICES[$INDEX]:-}" ]]; then
@@ -258,6 +289,13 @@ fi
 DEVICE_DIR="${DEVICES[$INDEX]}"
 CONFIG_FILE="$DEVICE_DIR/env.conf"
 INCLUDE_FILE="$DEVICE_DIR/include.txt"
+EXCLUDE_FILE="$DEVICE_DIR/exclude_rdfind.txt"
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Config mancante: $CONFIG_FILE"
+  exit 1
+fi
+
 if [[ ! -f "$INCLUDE_FILE" ]]; then
   echo "Include mancante: $INCLUDE_FILE"
   exit 1
@@ -265,14 +303,66 @@ fi
 
 # shellcheck disable=SC1090
 source "$CONFIG_FILE"
-DEST_BASE="/mnt"
 
-if [[ "$DEST" != /* ]]; then
-  DEST_BASE="${DEST_BASE:-/mnt}"
-fi
-INCLUDE_FILE="$DEVICE_DIR/include.txt"
+DEST_BASE="/mnt"
+BASE="$DEST_BASE/$DEST"
+
 echo "CONFIG: NAME=$NAME DEST=$DEST SRC=$SRC"
+
 : "${NAME:?NAME non definito in env.conf}"
 : "${DEST:?DEST non definito in env.conf}"
 : "${SRC:?SRC non definito in env.conf}"
-backup_pc "$NAME" "$DEST" "$SRC"
+
+# =========================
+# SCELTA OPERAZIONE
+# =========================
+
+echo
+echo "=== Operazione ==="
+echo "1) Backup"
+echo "2) Deduplicazione"
+read -rp "Scelta: " OP
+
+case "$OP" in
+  1)
+    # === Modalità backup ===
+    echo
+    echo "=== Modalità ==="
+    echo "1) Dry run (simulazione)"
+    echo "2) Backup reale"
+    read -rp "Scelta: " MODE || exit 1
+
+    case "$MODE" in
+      1)
+        DRY_RUN_FLAG=(--dry-run)
+        echo "[DRY RUN ATTIVO]"
+        ;;
+      2)
+        DRY_RUN_FLAG=()
+        echo "[MODALITÀ REALE]"
+        ;;
+      *)
+        echo "Scelta non valida"
+        exit 1
+        ;;
+    esac
+
+    backup_pc "$NAME" "$DEST" "$SRC"
+    ;;
+
+  2)
+    # per ora placeholder
+    echo
+    echo "=== Deduplicazione ==="
+    echo "1) Ultimo + precedente"
+    echo "2) Completa (LENTA)"
+    read -rp "Scelta: " DEDUP_MODE
+
+    dedup_run "$DEST" "$DEDUP_MODE"
+    ;;
+
+  *)
+    echo "Scelta non valida"
+    exit 1
+    ;;
+esac
