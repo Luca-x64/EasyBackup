@@ -15,7 +15,8 @@ L'eseguibile è situato sul disco esterno e consente di eseguire rapidamente il 
 - Hardlink tra snapshot → risparmio spazio
 - Modalità:
   - Dry-run (simulazione)
-  - Backup reale
+  - Backup (reale)
+  - Deduplicazione (parziale o completo)
 - Validazione dei path prima dell’esecuzione
 - Supporto multi-sorgente (PC, telefono)
 - Nessuna dipendenza oltre a `rsync`
@@ -26,6 +27,7 @@ L'eseguibile è situato sul disco esterno e consente di eseguire rapidamente il 
 
 - Linux
 - `rsync`
+- `rdfind` (facoltativo)
 - filesystem con supporto hardlink (EXT4 consigliato)
 
 > Sistemi operativi Windows non supportati.
@@ -90,6 +92,7 @@ Contenuto:
 
 - `env.conf` → parametri del dispositivo  
 - `include.txt` → file/cartelle da salvare  
+- `exclude_rdfind.txt` -> cartelle da escludere per deduplicazione (rdfind)
 
 ---
 
@@ -144,6 +147,7 @@ Desktop/
 
 - `1` → Dry run (simulazione)  
 - `2` → Backup reale  
+- `3` → Deduplicazine
 
 ### Comportamento
 
@@ -251,9 +255,9 @@ DEST_BASE="/mnt"
 ---
 
 ROADMAP:
+- TESTING: Deduplicazione
 - compressione
 - cifratura
-- deduplicazione con hash
 - scheduling automatico
 - backup remoto (drive/NAS)
 ---
