@@ -28,8 +28,6 @@ L'eseguibile è situato sul disco esterno e consente di eseguire rapidamente il 
 - `rsync`
 - filesystem con supporto hardlink (EXT4 consigliato)
 
-> NTFS funziona ma con limitazioni (permessi e comportamento hardlink)
-
 > Sistemi operativi Windows non supportati.
 ---
 
@@ -189,7 +187,7 @@ DEST_BASE="/mnt"
 
 
 <details>
-<summary><strong>Hardlink (concetto chiave)</strong></summary>
+<summary><strong>Hardlink</strong></summary>
 
 - file identici condividono lo stesso inode  
 - spazio occupato una sola volta  
@@ -253,7 +251,6 @@ DEST_BASE="/mnt"
 ---
 
 ROADMAP:
-- supporto Android
 - compressione
 - cifratura
 - deduplicazione con hash
